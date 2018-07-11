@@ -148,7 +148,7 @@ class FlatCacheTests: XCTestCase {
         do {
             let val = try cache.remove(key: "hello") as CacheModel?
             XCTAssertNotNil(val)
-        } catch FlatCacheError.noValueForKey(let key) {
+        } catch FlatCacheError.valueNotFound(let key) {
             XCTAssert(false, "No value found for key: - \(key)")
         } catch {
             XCTAssert(true, "\(error)")

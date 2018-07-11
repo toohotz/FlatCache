@@ -154,7 +154,7 @@ public final class FlatCache {
         
         let key = FlatCacheKey(typeName: T.typeName, id: id)
         guard let val = storage[key] as? Cachable else {
-            throw FlatCacheError.noValueForKey(id)
+            throw FlatCacheError.valueNotFound(id)
         }
         storage.removeValue(forKey: key)
         enumerateListeners(key: key) { listener in
