@@ -31,8 +31,8 @@ class CacheModelListener: FlatCacheListener {
     func flatCacheDidStopUpdating(update: FlatCache.Update) {
         switch update {
         case .item(let item):
-            if let item = item as? CacheModel, let itemIndex = receivedItemQueue.firstIndex(where: {$0.value == item.value && $0.id == item.id}) {
-                receivedItemQueue.remove(at: itemIndex)
+            if let item = item as? CacheModel, let itemFromQueue = receivedItemQueue.first(where: {item.value == $0.value}) {
+                receivedItemQueue = receivedItemQueue.filter{$0.value != itemFromQueue.value}
             }
         case .list(let list):
             if let list = list as? [CacheModel] {
