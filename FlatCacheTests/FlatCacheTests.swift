@@ -14,6 +14,7 @@ struct CacheModel: Cachable {
 }
 
 class CacheModelListener: FlatCacheListener {
+    
     var receivedItemQueue = [CacheModel]()
     var receivedListQueue = [[CacheModel]]()
 
@@ -25,6 +26,23 @@ class CacheModelListener: FlatCacheListener {
             if let item = item as? CacheModel {
               receivedItemQueue = receivedItemQueue.filter {$0.id != item.id && $0.value != item.value}
             }
+        }
+    }
+    func flatCacheDidStopUpdating(update: FlatCache.Update) {
+        switch update {
+        case .item(let item):
+            if let item = item as? CacheModel, let itemIndex = receivedItemQueue.firstIndex(where: {$0.value == item.value && $0.id == item.id}) {
+                receivedItemQueue.remove(at: itemIndex)
+            }
+        case .list(let list):
+            if let list = list as? [CacheModel] {
+                let filteredListQueue = receivedItemQueue.filter{listFromQueue in return !list.contains(where: { model in
+                    return listFromQueue.value != model.value
+                })}
+                receivedItemQueue = filteredListQueue
+            }
+        case .removeItem(_):
+            break
         }
     }
 }
@@ -129,7 +147,7 @@ class FlatCacheTests: XCTestCase {
         XCTAssertNotNil(cache.get(id: "hello") as CacheModel?)
         do {
             let val = try cache.remove(key: "hello") as CacheModel?
-            XCTAssertNil(val)
+            XCTAssertNotNil(val)
         } catch FlatCacheError.noValueForKey(let key) {
             XCTAssert(false, "No value found for key: - \(key)")
         } catch {
@@ -161,5 +179,34 @@ class FlatCacheTests: XCTestCase {
         } catch {
             XCTAssert(false, "\(error)")
         }
+    }
+    
+    func test_stopOberservingModel() {
+        let cache = FlatCache()
+        let m1 = CacheModel(id: "foo", value: "bar")
+        let l1 = CacheModelListener()
+        cache.add(listener: l1, value: m1)
+        cache.set(value: m1)
+        XCTAssertEqual(l1.receivedItemQueue.count, 1)
+        cache.stopListener(l1, fromObserving: m1)
+        XCTAssertEqual(l1.receivedItemQueue.count, 0)
+    }
+    
+    func test_stopObserving_someModels() {
+        let cache = FlatCache()
+        let m1 = CacheModel(id: "foo", value: "bar")
+        let m2 = CacheModel(id: "bar", value: "foo")
+        let m3 = CacheModel(id: "hello", value: "world")
+        let l1 = CacheModelListener()
+        cache.add(listener: l1, value: m1)
+        cache.add(listener: l1, value: m2)
+        cache.add(listener: l1, value: m3)
+        cache.set(value: m1)
+        cache.set(value: m2)
+        cache.set(value: m3)
+        XCTAssertEqual(l1.receivedItemQueue.count, 3)
+        cache.stopListener(l1, fromObserving: m1)
+        cache.stopListener(l1, fromObserving: m3)
+        XCTAssertEqual(l1.receivedItemQueue.count, 1)
     }
 }

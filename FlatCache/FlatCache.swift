@@ -40,6 +40,7 @@ private extension Cachable {
 
 public protocol FlatCacheListener: class {
     func flatCacheDidUpdate(cache: FlatCache, update: FlatCache.Update)
+    func flatCacheDidStopUpdating(update: FlatCache.Update)
 }
 
 public final class FlatCache {
@@ -60,6 +61,17 @@ public final class FlatCache {
     private var listeners: [FlatCacheKey: NSHashTable<AnyObject>] = [:]
     
     public init() { }
+    
+    func stopListener<T: Cachable>(_ listener: FlatCacheListener, fromObserving model: T) {
+        assert(Thread.isMainThread)
+        
+        let key = model.flatCacheKey
+        if let table = listeners[key] {
+            table.remove(self)
+            listeners.removeValue(forKey: key)
+            listener.flatCacheDidStopUpdating(update: .item(model))
+        }
+    }
     
     public func add<T: Cachable>(listener: FlatCacheListener, value: T) {
         assert(Thread.isMainThread)
