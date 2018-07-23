@@ -48,6 +48,8 @@ public final class FlatCache {
         case item(Any)
         case list([Any])
         case removeItem(Cachable)
+        /// An array of items removed for each cache key with a boolean that represents if the current key is the last key provided.
+        case removeItems([Any], Bool)
     }
     
     private var storage: [FlatCacheKey: Any] = [:]
@@ -98,6 +100,28 @@ public final class FlatCache {
         }
     }
     
+    public func unset<T: Cachable>(keys: [String]) throws -> [T] {
+        assert(Thread.isMainThread)
+        var vals: [Any] = []
+        
+        // Remove items from cache
+        for key in keys {
+            let cacheKey = FlatCacheKey(typeName: T.typeName, id: key)
+            if let cachedVal = storage[cacheKey] as? T {
+                vals.append(cachedVal)
+            } else {
+                // Invalid key provided
+                throw FlatCacheError.valueNotFound(key)
+            }
+            storage = storage.filter{$0.key != cacheKey}
+            // Update listeners to stop listening to the removed items
+            enumerateListeners(key: cacheKey, block: { listener in
+                listener.flatCacheDidUpdate(cache: self, update: FlatCache.Update.removeItems(vals, key == keys.last))
+            })
+        }
+        return vals as! [T]
+    }
+    
     public func set<T: Cachable>(values: [T]) {
         assert(Thread.isMainThread)
         
@@ -137,12 +161,17 @@ public final class FlatCache {
         return storage[key] as? T
     }
     
-    public func remove<T: Cachable>(key id: String) throws -> T? {
+    /// Removes an item from cache.
+    /// - Important: This method must be called from the main thread.
+    /// - Parameter id: The key corresponding to the cached item.
+    /// - Returns: An optional `Cachable` object if it exists.
+    /// - Throws: Throws a `FlatCacheError` if no value could be found for the given key.
+    public func remove<T: Cachable>(key id: String) throws -> T {
         assert(Thread.isMainThread)
         
         let key = FlatCacheKey(typeName: T.typeName, id: id)
         guard let val = storage[key] as? Cachable else {
-            throw FlatCacheError.noValueForKey(id)
+            throw FlatCacheError.valueNotFound(id)
         }
         storage.removeValue(forKey: key)
         enumerateListeners(key: key) { listener in
@@ -151,6 +180,6 @@ public final class FlatCache {
                 listeners.remove(at: index)
             }
         }
-        return val as? T
+        return val as! T
     }
 }

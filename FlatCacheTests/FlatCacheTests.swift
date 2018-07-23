@@ -8,22 +8,44 @@
 
 import XCTest
 
-struct CacheModel: Cachable {
+struct CacheModel: Cachable, Hashable {
     let id: String
     let value: String
+    
+    var hashValue: Int {
+        return id.hashValue ^ value.hashValue
+    }
 }
 
 class CacheModelListener: FlatCacheListener {
     var receivedItemQueue = [CacheModel]()
     var receivedListQueue = [[CacheModel]]()
-
+    lazy var tempItems = [Any]()
+    
     func flatCacheDidUpdate(cache: FlatCache, update: FlatCache.Update) {
         switch update {
         case .item(let item): receivedItemQueue.append(item as! CacheModel)
         case .list(let list): receivedListQueue.append(list as! [CacheModel])
         case .removeItem(let item):
             if let item = item as? CacheModel {
-              receivedItemQueue = receivedItemQueue.filter {$0.id != item.id && $0.value != item.value}
+              receivedItemQueue = receivedItemQueue.lazy.filter {$0.id != item.id && $0.value != item.value}
+            }
+        case .removeItems(let items, let isFinished):
+            tempItems.append(items)
+            if isFinished {
+                var flattenedList = [CacheModel]()
+                for list in tempItems {
+                    if let cacheList = list as? [CacheModel] {
+                        flattenedList.append(contentsOf: cacheList)
+                    }
+                }
+                let itemsToRemoveSet = Set(flattenedList)
+                let itemsToRemove = Array(itemsToRemoveSet)
+                for list in receivedListQueue {
+                    let diffedList = Set(list).subtracting(itemsToRemove)
+                    if list == receivedListQueue.first { receivedListQueue.removeAll() }
+                    receivedListQueue.append(Array(diffedList))
+                }
             }
         }
     }
@@ -128,9 +150,9 @@ class FlatCacheTests: XCTestCase {
         cache.set(value: model)
         XCTAssertNotNil(cache.get(id: "hello") as CacheModel?)
         do {
-            let val = try cache.remove(key: "hello") as CacheModel?
-            XCTAssertNil(val)
-        } catch FlatCacheError.noValueForKey(let key) {
+            let val = try cache.remove(key: "hello") as CacheModel
+            XCTAssertNotNil(val)
+        } catch FlatCacheError.valueNotFound(let key) {
             XCTAssert(false, "No value found for key: - \(key)")
         } catch {
             XCTAssert(true, "\(error)")
@@ -153,13 +175,48 @@ class FlatCacheTests: XCTestCase {
         cache.set(value: m3)
         XCTAssertEqual(l1.receivedItemQueue.count, 1)
         do {
-            let cachedVal = try cache.remove(key: m1.id) as CacheModel?
-            let _ =  try cache.remove(key: m3.id) as CacheModel?
-            XCTAssertEqual(m1.value, cachedVal?.value)
+            let cachedVal = try cache.remove(key: m1.id) as CacheModel
+            let _ =  try cache.remove(key: m3.id) as CacheModel
+            XCTAssertEqual(m1.value, cachedVal.value)
             XCTAssertEqual(l1.receivedItemQueue.count, 0)
             XCTAssertEqual(l2.receivedItemQueue.count, 1)
         } catch {
             XCTAssert(false, "\(error)")
         }
+    }
+    
+    func test_RemoveResultList() {
+        let cache = FlatCache()
+        let m1 = CacheModel(id: "foo", value: "bar")
+        let m2 = CacheModel(id: "bar", value: "foo")
+        let m3 = CacheModel(id: "hello", value: "world")
+        let m4 = CacheModel(id: "m4", value: "m4_value")
+        let m5 = CacheModel(id: "m5", value: "m5_value")
+        let m6 = CacheModel(id: "m6", value: "m6_value")
+        let l1 = CacheModelListener()
+        cache.add(listener: l1, value: m1)
+        cache.add(listener: l1, value: m2)
+        cache.add(listener: l1, value: m3)
+        cache.add(listener: l1, value: m4)
+        cache.add(listener: l1, value: m5)
+        cache.add(listener: l1, value: m6)
+        
+        cache.set(values: [m1, m2, m3])
+        cache.set(value: m4)
+        cache.set(values: [m5, m6])
+        
+        XCTAssertEqual(1, l1.receivedItemQueue.count)
+        
+        do {
+            let removedVals: [CacheModel] = try cache.unset(keys: ["foo", "bar", "m6"])
+            XCTAssertEqual(3, removedVals.count)
+        } catch FlatCacheError.valueNotFound(let key) {
+            XCTAssert(false, "Invalid key found: \(key)")
+        } catch {
+            XCTAssert(false, "Error: \(error)")
+        }
+        // Should only have a single item and list left over
+        XCTAssertEqual(1, l1.receivedListQueue.first?.count)
+        XCTAssertEqual(1, l1.receivedListQueue.last?.count)
     }
 }

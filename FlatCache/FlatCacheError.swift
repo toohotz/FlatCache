@@ -9,5 +9,6 @@
 import Foundation
 
 enum FlatCacheError: Error {
-    case noValueForKey(String)
+    /// Indicates that a value could not be found for the key provided.  The associated `String` value corresponds to the key provided.
+    case valueNotFound(String)
 }
